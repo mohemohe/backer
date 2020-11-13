@@ -1,0 +1,93 @@
+#!/bin/bash -e
+
+if [[ "${BACKER_DEBUG}" != "" ]]; then
+    set -x
+fi
+
+_BACKER_BACKUP_DIR="$HOME/.local/backer"
+if [[ "$BACKER_BACKUP_DIR" != "" ]]; then
+    _BACKER_BACKUP_DIR="$BACKER_BACKUP_DIR"
+fi
+
+function _man() {
+    local file
+    file="$(basename $0)"
+    cat << EOF
+$file - backup / resore docker volume
+
+$file backup  : docker volume to archive
+$file restore : archive to docker volume
+$file list    : list docker volume / archive
+$file inspect : list file in archive
+$file drop    : remove archive
+EOF
+}
+
+function _backup() {
+    if [[ "$#" != "2" ]]; then
+        echo "$(basename $0) backup 'volume_name' 'backup_name'"
+        exit 1
+    fi
+    cd /var/lib/docker/volumes/$1
+    tar capf $_BACKER_BACKUP_DIR/$2.tar.zstd ./
+}
+
+function _restore() {
+    if [[ "$#" != "2" ]]; then
+        echo "$(basename $0) backup 'backup_name' 'volume_name'"
+        exit 1
+    fi
+    docker volume create $2
+    cd /var/lib/docker/volumes/$2
+    tar xpf $_BACKER_BACKUP_DIR/$1.tar.zstd .
+}
+
+function _list() {
+    case $1 in
+        "volume" )
+            docker volume ls -q
+        ;;
+        "backup" )
+            find $_BACKER_BACKUP_DIR -maxdepth 1 -type f -exec basename {} \; | sed 's|.tar.zstd$||g'
+        ;;
+        * )
+            echo "$(basename $0) list volume"
+            echo "$(basename $0) list backup"
+    esac
+}
+
+function _drop() {
+    if [[ "$#" != "1" ]]; then
+        echo "$(basename $0) drop 'backup_name'"
+        exit 1
+    fi
+
+    rm $_BACKER_BACKUP_DIR/$1.tar.zstd
+}
+
+function _inspect() {
+    if [[ "$#" != "1" ]]; then
+        echo "$(basename $0) inspect 'backup_name'"
+        exit 1
+    fi
+
+    ls -l $_BACKER_BACKUP_DIR/$1.tar.zstd
+    tar tf $_BACKER_BACKUP_DIR/$1.tar.zstd
+}
+
+function _main() {
+    mkdir -p "$_BACKER_BACKUP_DIR"
+
+    local func
+    func="$1"
+    if [[ "$#" != "0" ]]; then
+        shift 1
+    fi
+
+    case "$func" in
+        "backup" | "restore" | "drop" | "list" | "inspect" ) "_$func" $* ;;
+        "" | * ) _man ;;
+    esac
+}
+
+_main $*
